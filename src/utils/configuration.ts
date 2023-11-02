@@ -6,6 +6,7 @@ import { z } from 'zod'
 
 import { getAnnotations, isWindows } from '../extension/utils'
 import { SERVER_PORT } from '../constants'
+import { NotebookAutoSaveSetting } from '../types'
 
 const ACTIONS_SECTION_NAME = 'runme.actions'
 const SERVER_SECTION_NAME = 'runme.server'
@@ -73,6 +74,9 @@ const configurationSchema = {
     baseDomain: z.string().default(DEFAULT_RUNME_BASE_DOMAIN),
     enableShare: z.boolean().default(true),
     forceNewWindow: z.boolean().default(true),
+    notebookAutoSave: z
+      .enum([NotebookAutoSaveSetting.Yes, NotebookAutoSaveSetting.No])
+      .default(NotebookAutoSaveSetting.No),
   },
 }
 
@@ -335,6 +339,10 @@ const getForceNewWindowConfig = (): boolean => {
   return getCloudConfigurationValue('forceNewWindow', true)
 }
 
+const getNotebookAutoSave = (): NotebookAutoSaveSetting => {
+  return getCloudConfigurationValue('notebookAutoSave', NotebookAutoSaveSetting.No)
+}
+
 export {
   getPortNumber,
   getBinaryPath,
@@ -356,4 +364,5 @@ export {
   getRunmePanelIdentifier,
   isRunmeAppButtonsEnabled,
   getForceNewWindowConfig,
+  getNotebookAutoSave,
 }
