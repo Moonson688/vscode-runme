@@ -114,7 +114,7 @@ export abstract class SerializerBase implements NotebookSerializer, Disposable {
   } {
     return {
       ...(metadata || {}),
-      ...{ 'runme.dev/uuid': uuidv4() },
+      ...{ 'runme.dev/uuid': metadata?.id || uuidv4() },
     }
   }
 

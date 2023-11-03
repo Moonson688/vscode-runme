@@ -54,6 +54,7 @@ export namespace Serializer {
   }
 
   export interface Metadata {
+    id?: string
     name?: string
     background?: string
     interactive?: string

@@ -47,7 +47,8 @@ const boolify = (defaultValue: boolean, invalidTypeError: string = 'expected a b
   )
 
 export const AnnotationSchema = {
-  'runme.dev/uuid': z.string().uuid().optional(),
+  id: z.string().optional(),
+  'runme.dev/uuid': z.string().optional(),
   background: boolify(false),
   interactive: boolify(true),
   closeTerminalOnSuccess: boolify(true),
