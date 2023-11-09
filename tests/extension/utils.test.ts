@@ -6,19 +6,16 @@ import {
   getTerminalByCell,
   resetEnv,
   getKey,
-  getCmdShellSeq,
   normalizeLanguage,
   getAnnotations,
   mapGitIgnoreToGlobFolders,
   hashDocumentUri,
   getGrpcHost,
-  prepareCmdSeq,
   openFileAsRunmeNotebook,
   getWorkspaceFolder,
   getWorkspaceEnvs,
   isGitHubLink,
   isDenoScript,
-  getCmdSeq,
   validateAnnotations,
   setNotebookCategories,
   getNotebookCategories,
@@ -35,20 +32,23 @@ vi.mock('../../src/extension/grpc/client', () => ({}))
 vi.mock('../../src/extension/grpc/runnerTypes', () => ({}))
 
 vi.mock('vscode', async () => {
-  const { v4 } = await vi.importActual('uuid') as typeof import('uuid')
-  const mocked = await vi.importActual('../../__mocks__/vscode') as any
+  const { v4 } = (await vi.importActual('uuid')) as typeof import('uuid')
+  const mocked = (await vi.importActual('../../__mocks__/vscode')) as any
 
   const uuid1 = v4()
   const uuid2 = v4()
 
-  return ({
+  return {
     ...mocked,
     default: {
       window: {
         terminals: [
-          { creationOptions: { env: { RUNME_ID: uuid1 } }, name: `echo hello (RUNME_ID: ${uuid1})` },
-          { creationOptions: { env: { RUNME_ID: uuid2 } }, name: `echo hi (RUNME_ID: ${uuid2})` }
-        ]
+          {
+            creationOptions: { env: { RUNME_ID: uuid1 } },
+            name: `echo hello (RUNME_ID: ${uuid1})`,
+          },
+          { creationOptions: { env: { RUNME_ID: uuid2 } }, name: `echo hi (RUNME_ID: ${uuid2})` },
+        ],
       },
       workspace: {
         getConfiguration: vi.fn(),
@@ -56,12 +56,12 @@ vi.mock('vscode', async () => {
         fs: mocked.workspace.fs,
       },
       env: {
-        machineId: 'test-machine-id'
+        machineId: 'test-machine-id',
       },
       NotebookCellKind: {
         Markup: 1,
         Code: 2,
-      }
+      },
     },
     workspace: {
       getConfiguration: vi.fn().mockReturnValue(new Map()),
@@ -69,9 +69,9 @@ vi.mock('vscode', async () => {
       workspaceFolders: [],
     },
     commands: {
-      executeCommand: vi.fn()
+      executeCommand: vi.fn(),
     },
-  })
+  }
 })
 vi.mock('vscode-telemetry')
 
@@ -80,7 +80,9 @@ beforeAll(() => {
   DEFAULT_ENV.PATH = '/usr/bin'
   ENV_STORE.delete('PATH')
 })
-afterAll(() => { process.env.PATH = PATH })
+afterAll(() => {
+  process.env.PATH = PATH
+})
 beforeEach(() => {
   vi.mocked(workspace.getConfiguration).mockClear()
   vi.mocked(commands.executeCommand).mockClear()
@@ -93,22 +95,25 @@ test('isInteractive', () => {
 })
 
 test('getTerminalByCell', () => {
-  expect(getTerminalByCell({
-    metadata: { 'runme.dev/uuid': vscode.window.terminals[0].creationOptions['env'].RUNME_ID },
-    kind: 2,
-  } as any))
-    .toBeTruthy()
+  expect(
+    getTerminalByCell({
+      metadata: { 'runme.dev/uuid': vscode.window.terminals[0].creationOptions['env'].RUNME_ID },
+      kind: 2,
+    } as any),
+  ).toBeTruthy()
 
-  expect(getTerminalByCell({
-    metadata: { 'runme.dev/uuid': v4() },
-    kind: 2,
-  } as any))
-    .toBeUndefined()
+  expect(
+    getTerminalByCell({
+      metadata: { 'runme.dev/uuid': v4() },
+      kind: 2,
+    } as any),
+  ).toBeUndefined()
 
-  expect(getTerminalByCell({
-    kind: 1,
-  } as any))
-    .toBeUndefined()
+  expect(
+    getTerminalByCell({
+      kind: 1,
+    } as any),
+  ).toBeUndefined()
 })
 
 test('resetEnv', () => {
@@ -119,73 +124,26 @@ test('resetEnv', () => {
 })
 
 test('getKey', () => {
-  expect(getKey({
-    getText: vi.fn().mockReturnValue('foobar'),
-    languageId: 'barfoo'
-  } as any)).toBe('barfoo')
+  expect(
+    getKey({
+      getText: vi.fn().mockReturnValue('foobar'),
+      languageId: 'barfoo',
+    } as any),
+  ).toBe('barfoo')
 
-  expect(getKey({
-    getText: vi.fn().mockReturnValue('deployctl deploy foobar'),
-    languageId: 'something else'
-  } as any)).toBe('deno')
+  expect(
+    getKey({
+      getText: vi.fn().mockReturnValue('deployctl deploy foobar'),
+      languageId: 'something else',
+    } as any),
+  ).toBe('deno')
 
-  expect(getKey({
-    getText: vi.fn().mockReturnValue(''),
-    languageId: 'shellscript'
-  } as any)).toBe('sh')
-})
-
-suite('getCmdShellSeq', () => {
-  test('one command', () => {
-    const cellText = 'deno task start'
-    expect(getCmdShellSeq(cellText, 'darwin')).toMatchSnapshot()
-  })
-
-  test('wrapped command', () => {
-    // eslint-disable-next-line max-len
-    const cellText = Buffer.from('ZGVubyBpbnN0YWxsIFwKICAgICAgLS1hbGxvdy1yZWFkIC0tYWxsb3ctd3JpdGUgXAogICAgICAtLWFsbG93LWVudiAtLWFsbG93LW5ldCAtLWFsbG93LXJ1biBcCiAgICAgIC0tbm8tY2hlY2sgXAogICAgICAtciAtZiBodHRwczovL2Rlbm8ubGFuZC94L2RlcGxveS9kZXBsb3ljdGwudHMK', 'base64').toString('utf-8')
-
-    expect(getCmdShellSeq(cellText, 'darwin')).toMatchSnapshot()
-  })
-
-  test('env only', () => {
-    const cellText = `export DENO_INSTALL="$HOME/.deno"
-      export PATH="$DENO_INSTALL/bin:$PATH"
-    `
-    expect(getCmdShellSeq(cellText, 'darwin')).toMatchSnapshot()
-  })
-
-  test('complex wrapped', () => {
-    // eslint-disable-next-line max-len
-    const cellText = 'curl "https://api-us-west-2.graphcms.com/v2/cksds5im94b3w01xq4hfka1r4/master?query=$(deno run -A query.ts)" --compressed 2>/dev/null \\\n| jq -r \'.[].posts[] | "\(.title) - by \(.authors[0].name), id: \(.id)"\''
-    expect(getCmdShellSeq(cellText, 'darwin')).toMatchSnapshot()
-  })
-
-  test('linux without pipefail', () => {
-    const cellText = 'ls ~/'
-    expect(getCmdShellSeq(cellText, 'linux')).toMatchSnapshot()
-  })
-
-  test('windows without shell flags', () => {
-    const cellText = 'ls ~/'
-    expect(getCmdShellSeq(cellText, 'win32')).toMatchSnapshot()
-  })
-
-  test('with comments', () => {
-    // eslint-disable-next-line max-len
-    const cellText = 'echo "Install deno via installer script"\n# macOS or Linux\ncurl -fsSL https://deno.land/x/install/install.sh | sh'
-    expect(getCmdShellSeq(cellText, 'darwin')).toMatchSnapshot()
-  })
-
-  test('trailing comment', () => {
-    const cellText = 'cd ..\nls / # list dir contents\ncd ..\nls /'
-    expect(getCmdShellSeq(cellText, 'darwin')).toMatchSnapshot()
-  })
-
-  test('leading prompts', () => {
-    const cellText = '$ docker build -t runme/demo .\n$ docker ps -qa'
-    expect(getCmdShellSeq(cellText, 'darwin')).toMatchSnapshot()
-  })
+  expect(
+    getKey({
+      getText: vi.fn().mockReturnValue(''),
+      languageId: 'shellscript',
+    } as any),
+  ).toBe('sh')
 })
 
 suite('normalizeLanguage', () => {
@@ -247,7 +205,7 @@ suite('mapGitIgnoreToGlobFolders', () => {
       '**/coverage/config/**',
       '**/abc/**/**',
       '**/a/**/b/**',
-      '**/jspm_packages/**'
+      '**/jspm_packages/**',
     ]
 
     const globPatterns = mapGitIgnoreToGlobFolders(gitIgnoreContents.split('\n'))
@@ -269,21 +227,22 @@ test('salt hash filename', () => {
 
 suite('#getAnnotations', () => {
   test('should have sane defaults', () => {
-    const d = getAnnotations({ name: 'command-123', 'runme.dev/uuid': '48d86c43-84a4-469d-8c78-963513b0f9d0' })
-    expect(d).toStrictEqual(
-      <CellAnnotations>{
-        background: false,
-        closeTerminalOnSuccess: true,
-        interactive: true,
-        mimeType: 'text/plain',
-        name: 'command-123',
-        category: '',
-        excludeFromRunAll: false,
-        promptEnv: true,
-        'runme.dev/uuid': '48d86c43-84a4-469d-8c78-963513b0f9d0',
-        interpreter: '',
-      }
-    )
+    const d = getAnnotations({
+      name: 'command-123',
+      'runme.dev/uuid': '48d86c43-84a4-469d-8c78-963513b0f9d0',
+    })
+    expect(d).toStrictEqual(<CellAnnotations>{
+      background: false,
+      closeTerminalOnSuccess: true,
+      interactive: true,
+      mimeType: 'text/plain',
+      name: 'command-123',
+      category: '',
+      excludeFromRunAll: false,
+      promptEnv: true,
+      'runme.dev/uuid': '48d86c43-84a4-469d-8c78-963513b0f9d0',
+      interpreter: '',
+    })
   })
 
   test('should process cell properly', () => {
@@ -310,16 +269,10 @@ suite('#getAnnotations', () => {
 
 suite('#getGrpcHost', () => {
   test('should return host addr including config port', () => {
-    vi.mocked(workspace.getConfiguration).mockReturnValue({ get: vi.fn().mockReturnValue(7863) } as any)
+    vi.mocked(workspace.getConfiguration).mockReturnValue({
+      get: vi.fn().mockReturnValue(7863),
+    } as any)
     expect(getGrpcHost()).toStrictEqual('localhost:7863')
-  })
-})
-
-suite('prepareCmdSeq', () => {
-  test('should eliminate trailing dollar signs', () => {
-    expect(prepareCmdSeq('$ echo hi')).toStrictEqual(['echo hi'])
-    expect(prepareCmdSeq('  $  echo hi')).toStrictEqual(['echo hi'])
-    expect(prepareCmdSeq('echo 1\necho 2\n $ echo 4')).toStrictEqual(['echo 1', 'echo 2', 'echo 4'])
   })
 })
 
@@ -353,11 +306,7 @@ suite('getWorkspaceFolder', () => {
     const workspaceFolder3 = { uri: Uri.file('/bar/baz') }
 
     // @ts-ignore
-    workspace.workspaceFolders = [
-      workspaceFolder1,
-      workspaceFolder2,
-      workspaceFolder3,
-    ]
+    workspace.workspaceFolders = [workspaceFolder1, workspaceFolder2, workspaceFolder3]
 
     expect(getWorkspaceFolder()).toBe(workspaceFolder1)
     expect(getWorkspaceFolder(Uri.file('/bar/baz/.env'))).toBe(workspaceFolder3)
@@ -388,9 +337,7 @@ suite('getWorkspaceEnvs', () => {
     })
 
     // @ts-ignore
-    workspace.workspaceFolders = [
-      workspaceFolder,
-    ]
+    workspace.workspaceFolders = [workspaceFolder]
 
     expect(await getWorkspaceEnvs(workspaceFolder.uri)).toStrictEqual({
       SECRET_1: 'secret1_override',
@@ -403,80 +350,70 @@ suite('getWorkspaceEnvs', () => {
 suite('isGitHubLink', () => {
   test('Only accepts secure (https) links', () => {
     const cell: any = {
-      getText: vi.fn()
-        .mockReturnValue('http://github.com/stateful/vscode-runme/actions/workflows/release.yml')
+      getText: vi
+        .fn()
+        .mockReturnValue('http://github.com/stateful/vscode-runme/actions/workflows/release.yml'),
     }
     expect(isGitHubLink(cell)).toBe(false)
   })
 
   test('Only accepts github.com links', () => {
     const cell: any = {
-      getText: vi.fn()
-        .mockReturnValue('http://gitmango.com/stateful/vscode-runme/actions/workflows/release.yml')
+      getText: vi
+        .fn()
+        .mockReturnValue('http://gitmango.com/stateful/vscode-runme/actions/workflows/release.yml'),
     }
     expect(isGitHubLink(cell)).toBe(false)
   })
 
   test('Only accepts github.com workflow links', () => {
     const cell: any = {
-      getText: vi.fn()
-        .mockReturnValue('http://github.com/stateful/vscode-runme')
+      getText: vi.fn().mockReturnValue('http://github.com/stateful/vscode-runme'),
     }
     expect(isGitHubLink(cell)).toBe(false)
   })
 
   test('Only accepts complete github.com workflow links', () => {
     const cell: any = {
-      getText: vi.fn()
-        .mockReturnValue('http://github.com/stateful/vscode-runme/actions/workflows')
+      getText: vi.fn().mockReturnValue('http://github.com/stateful/vscode-runme/actions/workflows'),
     }
     expect(isGitHubLink(cell)).toBe(false)
   })
 
   test('Accepts an action workflow link', () => {
     const cell: any = {
-      getText: vi.fn()
-        .mockReturnValue('https://github.com/stateful/vscode-runme/actions/workflows/release.yml')
+      getText: vi
+        .fn()
+        .mockReturnValue('https://github.com/stateful/vscode-runme/actions/workflows/release.yml'),
     }
     expect(isGitHubLink(cell)).toBe(true)
   })
 
   test('Accepts a source code action workflow link', () => {
     const cell: any = {
-      getText: vi.fn()
-        .mockReturnValue('https://github.com/stateful/vscode-runme/blob/main/.github/workflows/release.yml')
+      getText: vi
+        .fn()
+        .mockReturnValue(
+          'https://github.com/stateful/vscode-runme/blob/main/.github/workflows/release.yml',
+        ),
     }
     expect(isGitHubLink(cell)).toBe(true)
   })
-
 })
-
 
 suite('isDenoScript', () => {
   test('Rejects invalid deno command', () => {
     const cell: any = {
-      getText: vi.fn()
-        .mockReturnValue('deno deploy')
+      getText: vi.fn().mockReturnValue('deno deploy'),
     }
     expect(isDenoScript(cell)).toBe(false)
   })
 
   test('Accepts only deno deploy script', () => {
     const cell: any = {
-      getText: vi.fn()
-        .mockReturnValue('deployctl deploy')
+      getText: vi.fn().mockReturnValue('deployctl deploy'),
     }
     expect(isDenoScript(cell)).toBe(true)
-  })
-})
-
-suite('getCmdSeq', () => {
-  test('Rejects invalid deno command', () => {
-    const cellText = `export DENO_INSTALL="$HOME/.deno"
-    export PATH="$DENO_INSTALL/bin:$PATH"
-  `
-    const result = getCmdSeq(cellText)
-    expect(result).toStrictEqual(['export DENO_INSTALL="$HOME/.deno"', 'export PATH="$DENO_INSTALL/bin:$PATH"'])
   })
 })
 
@@ -488,9 +425,9 @@ suite('validateAnnotations', () => {
         interactive: 'invalid',
         closeTerminalOnSuccess: 'invalid',
         promptEnv: 'invalid',
-        mimeType: 'application/'
+        mimeType: 'application/',
       },
-      document: { uri: { fsPath: '/foo/bar/README.md' } }
+      document: { uri: { fsPath: '/foo/bar/README.md' } },
     }
     const result = validateAnnotations(cell)
     expect(result.hasErrors).toBe(true)
@@ -504,9 +441,9 @@ suite('validateAnnotations', () => {
         interactive: true,
         closeTerminalOnSuccess: true,
         promptEnv: false,
-        mimeType: 'text/plain'
+        mimeType: 'text/plain',
       },
-      document: { uri: { fsPath: '/foo/bar/README.md' } }
+      document: { uri: { fsPath: '/foo/bar/README.md' } },
     }
     const result = validateAnnotations(cell)
     expect(result.hasErrors).toBe(false)
@@ -519,22 +456,24 @@ suite('setNotebookCategories', () => {
       globalState: {
         get: vi.fn().mockReturnValue({
           notebook1: ['shell scripts', 'node.js examples'],
-          notebook2: ['more shell scripts']
+          notebook2: ['more shell scripts'],
         }),
         update: vi.fn().mockResolvedValue({}),
-
-      }
+      },
     } as any
     const uriMock = {
-      path: 'notebook1'
+      path: 'notebook1',
     } as any
 
-    await setNotebookCategories(contextMock, uriMock, new Set(['shell scripts', 'node.js examples']))
-    expect(contextMock.globalState.update).toHaveBeenCalledWith('notebookAvailableCategories',
-      {
-        'notebook1': ['shell scripts', 'node.js examples'],
-        'notebook2': ['more shell scripts']
-      })
+    await setNotebookCategories(
+      contextMock,
+      uriMock,
+      new Set(['shell scripts', 'node.js examples']),
+    )
+    expect(contextMock.globalState.update).toHaveBeenCalledWith('notebookAvailableCategories', {
+      notebook1: ['shell scripts', 'node.js examples'],
+      notebook2: ['more shell scripts'],
+    })
   })
 
   test('should set a new categories object when empty', async () => {
@@ -542,17 +481,20 @@ suite('setNotebookCategories', () => {
       globalState: {
         get: vi.fn().mockReturnValue(undefined),
         update: vi.fn().mockResolvedValue({}),
-      }
+      },
     } as any
     const uriMock = {
-      path: 'notebook1'
+      path: 'notebook1',
     } as any
 
-    await setNotebookCategories(contextMock, uriMock, new Set(['shell scripts', 'node.js examples']))
-    expect(contextMock.globalState.update).toHaveBeenCalledWith('notebookAvailableCategories',
-      {
-        'notebook1': ['shell scripts', 'node.js examples'],
-      })
+    await setNotebookCategories(
+      contextMock,
+      uriMock,
+      new Set(['shell scripts', 'node.js examples']),
+    )
+    expect(contextMock.globalState.update).toHaveBeenCalledWith('notebookAvailableCategories', {
+      notebook1: ['shell scripts', 'node.js examples'],
+    })
   })
 })
 
@@ -562,12 +504,12 @@ suite('getNotebookCategories', () => {
       globalState: {
         get: vi.fn().mockReturnValue({
           notebook1: ['shell scripts', 'node.js examples'],
-          notebook2: ['more shell scripts']
+          notebook2: ['more shell scripts'],
         }),
-      }
+      },
     } as any
     const uriMock = {
-      path: 'notebook1'
+      path: 'notebook1',
     } as any
 
     const categories = await getNotebookCategories(contextMock, uriMock)
@@ -580,12 +522,12 @@ suite('getNotebookCategories', () => {
       globalState: {
         get: vi.fn().mockReturnValue({
           notebook1: ['shell scripts', 'node.js examples'],
-          notebook2: ['more shell scripts']
+          notebook2: ['more shell scripts'],
         }),
-      }
+      },
     } as any
     const uriMock = {
-      path: 'notebook3'
+      path: 'notebook3',
     } as any
 
     const categories = await getNotebookCategories(contextMock, uriMock)
@@ -595,16 +537,16 @@ suite('getNotebookCategories', () => {
 })
 
 test('getNamespacedMid', () => {
-  expect(
-    getNamespacedMid('1836968c0b13822b48750c44bbb356d8ae45bebbd8f990c63b2641092a23ba89')
-  ).toBe('af4f113b-0bd0-5d95-ac4c-4d354a9cb84a')
+  expect(getNamespacedMid('1836968c0b13822b48750c44bbb356d8ae45bebbd8f990c63b2641092a23ba89')).toBe(
+    'af4f113b-0bd0-5d95-ac4c-4d354a9cb84a',
+  )
 })
 
 suite('bootFile', () => {
   const contextMock: ExtensionContext = {
     globalState: {
-        update: vi.fn().mockResolvedValue({}),
-    }
+      update: vi.fn().mockResolvedValue({}),
+    },
   } as any
 
   test('should prefer boot file before settings', async () => {
@@ -614,17 +556,19 @@ suite('bootFile', () => {
 
   test('should load file defined in settings', async () => {
     vi.mocked(workspace.getConfiguration).mockReturnValue({
-      get: () => '/foo/Settings.md'
+      get: () => '/foo/Settings.md',
     } as any)
-    vi.mocked(workspace.fs.stat).mockImplementation(
-      async (uri) => uri.path.endsWith('Settings.md')
-        ? true
-        : Promise.reject(new Error('not existing')) as any
+    vi.mocked(workspace.fs.stat).mockImplementation(async (uri) =>
+      uri.path.endsWith('Settings.md') ? true : (Promise.reject(new Error('not existing')) as any),
     )
     await bootFile(contextMock)
-    expect(commands.executeCommand).toBeCalledWith('vscode.openWith', expect.objectContaining({
-      path: '/foo/bar/foo/Settings.md'
-    }), 'runme')
+    expect(commands.executeCommand).toBeCalledWith(
+      'vscode.openWith',
+      expect.objectContaining({
+        path: '/foo/bar/foo/Settings.md',
+      }),
+      'runme',
+    )
   })
 })
 
@@ -656,16 +600,14 @@ suite('isMultiRootWorkspace', () => {
     // @ts-expect-error
     workspace.workspaceFolders = [
       { uri: Uri.file('/Users/user/Projects/project1') },
-      { uri: Uri.file('/Users/user/Projects/project2') }
+      { uri: Uri.file('/Users/user/Projects/project2') },
     ]
     expect(isMultiRootWorkspace()).toStrictEqual(true)
   })
 
   test('should return false when there is one workspace folder', () => {
     // @ts-expect-error
-    workspace.workspaceFolders = [
-      { uri: Uri.file('/Users/user/Projects/project1') }
-    ]
+    workspace.workspaceFolders = [{ uri: Uri.file('/Users/user/Projects/project1') }]
     expect(isMultiRootWorkspace()).toStrictEqual(false)
   })
 
@@ -678,16 +620,10 @@ suite('isMultiRootWorkspace', () => {
 
 suite('convertEnvList', () => {
   test('can handle basic example', () => {
-    expect(
-      convertEnvList([
-        'a=1',
-        'b=2',
-        'c=3\n4',
-      ])
-    ).toStrictEqual({
-      'a': '1',
-      'b': '2',
-      'c': '3\n4',
+    expect(convertEnvList(['a=1', 'b=2', 'c=3\n4'])).toStrictEqual({
+      a: '1',
+      b: '2',
+      c: '3\n4',
     })
   })
 })
